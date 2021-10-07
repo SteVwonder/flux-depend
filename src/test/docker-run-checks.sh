@@ -8,14 +8,15 @@
 IMAGE=focal
 JOBS=2
 MOUNT_CARGO_ARGS="--volume=$HOME/.cargo/:/home/$USER/.cargo"
+DEPEND_IMAGE=ci
 
 #
 declare -r prog=${0##*/}
 die() { echo -e "$prog: $@"; exit 1; }
 
 #
-declare -r long_opts="help,quiet,interactive,image:,flux-security-version:,jobs:,no-cache,no-home,tag:"
-declare -r short_opts="hqIdi:S:j:t:D:"
+declare -r long_opts="help,quiet,interactive,dev,image:,jobs:,no-cache,no-home"
+declare -r short_opts="hqIdi:ie:"
 declare -r usage="
 Usage: $prog [OPTIONS]\n\
 Build docker image for ci builds, then run tests inside the new\n\
@@ -28,6 +29,7 @@ Options:\n\
      --no-cache                Disable docker caching\n\
      --no-cargo                Skip mounting the host cargo directory\n\
  -q, --quiet                   Add --quiet to docker-build\n\
+ -d, --dev                     Use the dev depend image\n\
  -i, --image=NAME              Use base docker image NAME (default=$IMAGE)\n\
  -j, --jobs=N                  Value for make -j (default=$JOBS)\n
  -I, --interactive             Instead of running ci build, run docker\n\
@@ -52,9 +54,10 @@ while true; do
       -q|--quiet)                  QUIET="--quiet";            shift   ;;
       -i|--image)                  IMAGE="$2";                 shift 2 ;;
       -j|--jobs)                   JOBS="$2";                  shift 2 ;;
+      -d|--dev)                    DEPEND_IMAGE="dev";         shift   ;;
       -I|--interactive)            INTERACTIVE="/bin/bash";    shift   ;;
       --no-cache)                  NO_CACHE="--no-cache";      shift   ;;
-      --no-cargo)                  MOUNT_CARG_ARGS="";         shift   ;;
+      --no-cargo)                  MOUNT_CARGO_ARGS="";         shift   ;;
       --)                          shift; break;                       ;;
       *)                           die "Invalid option '$1'\n$usage"   ;;
     esac
@@ -74,8 +77,8 @@ docker build \
     --build-arg USER=$USER \
     --build-arg UID=$(id -u) \
     --build-arg GID=$(id -g) \
-    -t flux-depend-ci:${IMAGE} \
-    $TOP/src/test/docker/ci \
+    -t flux-depend-${DEPEND_IMAGE}:${IMAGE} \
+    $TOP/src/test/docker/${DEPEND_IMAGE} \
     || die "docker build failed"
 
 if [[ -n "$MOUNT_CARGO_ARGS" ]]; then
@@ -107,6 +110,6 @@ docker run --rm \
     --tty \
     ${INTERACTIVE:+--interactive} \
     --network=host \
-    flux-depend-ci:${IMAGE} \
+    flux-depend-${DEPEND_IMAGE}:${IMAGE} \
     ${INTERACTIVE:-./src/test/ci_run.sh} \
 || die "docker run failed"

@@ -32,6 +32,82 @@ enum StateError {
 }
 
 type SymbolMap = HashMap<String, HashSet<i64>>;
+type UserSymbolMap = HashMap<u32, SymbolMap>;
+
+
+fn nested_remove<T,U,V>(map: HashMap<T,HashMap<U,V>>, key: T, inner_key: U)
+where
+    T: Hash,
+    T: Eq,
+    U: Hash,
+    U: Eq,
+{
+        let relevant_map = match map
+            .get_mut(&key) {
+                Some(x) => x,
+                None => return false,
+            };
+        if !relevant_map.remove(&inner_key) {
+            error!(
+                "Failed to remove {} from the hashmap at {} in {}",
+                inner_key, key, map
+            );
+            return false;
+        }
+        if relevant_map.len() == 0 {
+            return map.remove(&key);
+        }
+
+        true
+}
+
+trait NestedRemove<T, U> {
+    fn nested_remove(&self, key: &T, inner_key: &U) -> bool;
+}
+
+impl NestedRemove<String, i64> for SymbolMap {
+    fn nested_remove(&self, key: &String, inner_key: &i64) -> bool {
+        let relevant_map = match self
+            .get_mut(&key) {
+                Some(x) => x,
+                None => return false,
+            };
+        if !relevant_map.remove(&inner_key) {
+            error!(
+                "Failed to remove {} from the hashmap at {} in {}",
+                inner_key, key, self
+            );
+            return false;
+        }
+        if relevant_map.len() == 0 {
+            return self.remove(&key);
+        }
+
+        true
+    }
+}
+
+impl NestedRemove<u32, String> for UserSymbolMap {
+    fn nested_remove(&self, key: &String, inner_key: &i64) -> bool {
+        let relevant_map = match self
+            .get_mut(&key) {
+                Some(x) => x,
+                None => return false,
+            };
+        if !relevant_map.remove(&inner_key) {
+            error!(
+                "Failed to remove {} from the hashmap at {} in {:#?}",
+                inner_key, key, self
+            );
+            return false;
+        }
+        if relevant_map.len() == 0 {
+            return self.remove(&key);
+        }
+
+        true
+    }
+}
 
 struct State {
     instance_owner: u32,
@@ -77,7 +153,7 @@ impl State {
             let out_job: &mut Job = match self.jobs.get_mut(out_jobid) {
                 Some(x) => x,
                 None => {
-                    eprintln!("Failed to find {} in the jobs map", out_jobid);
+                    error!("Failed to find {} in the jobs map", out_jobid);
                     return Err(StateError::InvalidJobID);
                 }
             };
@@ -201,25 +277,14 @@ impl State {
             })
             .collect();
 
+        let mut ret = Ok(());
         // TODO: implement fluid support
         // delete from matching 'out' labels in global/user scope
         for dependency in out_dependencies
             .iter()
             .filter(|x| x.scope == DependencyScope::Global)
         {
-            let relevant_map = self
-                .global_symbol_map
-                .get_mut(&dependency.value)
-                .expect("Dependency value missing in global map");
-            if relevant_map.remove(&jobid) == false {
-                eprintln!(
-                    "Failed to remove {}'s {} out dependency from the global scope",
-                    jobid, dependency.value
-                );
-            }
-            if relevant_map.len() == 0 {
-                self.global_symbol_map.remove(&dependency.value);
-            }
+            self.global_symbol_map.nested_remove(&dependency.value, &jobid);
         }
 
         match self.user_symbol_map.get_mut(&job.user) {
@@ -228,20 +293,7 @@ impl State {
                     .iter()
                     .filter(|x| x.scope == DependencyScope::User)
                 {
-                    let relevant_map = user_map
-                        .get_mut(&dependency.value)
-                        .expect("Dependency value missing in user map");
-                    if relevant_map .remove(&jobid)
-                        == false
-                    {
-                        eprintln!(
-                            "Failed to remove {}'s {} out dependency from user {}'s scope",
-                            jobid, dependency.value, job.user
-                        );
-                    }
-                    if relevant_map.len() == 0 {
-                        user_map.remove(&dependency.value);
-                    }
+                    user_map.nested_remove(&dependency.value, &jobid);
                 }
                 if user_map.len() == 0 {
                     self.user_symbol_map.remove(&job.user);
@@ -281,11 +333,9 @@ impl State {
             "alloc" => Ok(HashSet::new()),
             "finish" | "cancel" => {
                 let ret = self
-                    .remove_job_from_dependents(jobid)
-                    .map_err(|err| return err);
+                    .remove_job_from_dependents(jobid);
                 let _ret2 = self
-                    .remove_job_from_state_maps(jobid)
-                    .map_err(|err| return err);
+                    .remove_job_from_state_maps(jobid)?;
 
                 ret
             }

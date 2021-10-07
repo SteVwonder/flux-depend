@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Stephen Herbein <herbein1@llnl.gov>"]
 edition = "2018"
 
+[dependencies]
+petgraph = "^0.5.1"
+log = "^0.4.11"
+serde_json = "^1.0.59"
+
 [dependencies.flux-rs]
-git = "https://github.com/SteVwonder/flux-rs"
-branch = "add-integration-tests"
+git = "https://github.com/flux-framework/flux-rs"
